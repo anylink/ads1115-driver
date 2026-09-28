@@ -1,0 +1,32 @@
+menu "ADS1115 Demo Configuration"
+
+    config ADS1115_WIFI_SSID
+        string "WiFi SSID"
+        default "your-ssid"
+        help
+            设备要连接的 WiFi 名称（2.4G 频段）。
+
+    config ADS1115_WIFI_PASS
+        string "WiFi 密码"
+        default "your-password"
+
+    config ADS1115_HOST_NAME
+        string "上位机 mDNS 主机名（不带 .local 后缀）"
+        default "ads1115-host"
+        help
+            设备通过 mDNS 解析 <该名字>.local 获取上位机 IP。
+            上位机（Tools/ads1115_host.py）默认注册的名字就是 ads1115-host。
+
+    config ADS1115_HOST_PORT
+        int "上位机 TCP 端口"
+        range 1 65535
+        default 9000
+
+    config ADS1115_HOST_IP_FALLBACK
+        string "上位机固定 IP（mDNS 失败时使用，留空禁用）"
+        default ""
+        help
+            例如 192.168.1.100。仅当 mDNS 发现不可用时才会使用，
+            可在 Windows 上用 ipconfig 查询电脑局域网 IP 后填到这里。
+
+endmenu

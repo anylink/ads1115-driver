@@ -1,0 +1,25 @@
+# ESP-IDF 构建产物
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+
+# 宿主机测试产物
+test/host/test_ads1115
+*.o
+*.dSYM/
+
+# IDE / 编辑器
+.vscode/
+.cache/
+
+# 上位机构建产物与运行时数据
+Tools/.venv/
+Tools/dist/
+Tools/releases/
+Tools/__pycache__/
+Tools/host/__pycache__/
+Tools/csv_out/
+Tools/config/
+Tools/debug.log

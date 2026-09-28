@@ -1,0 +1,5 @@
+## ESP-IDF 5.5 起不再内置 mdns 组件，由组件管理器自动拉取
+## （首次构建需要联网，下载到 managed_components/）
+dependencies:
+  espressif/mdns: "*"
+  idf: ">=5.0"
