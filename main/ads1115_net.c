@@ -39,6 +39,7 @@
 
 #include "ads1115_proto.h"
 #include "ads1115_cfg.h"
+#include "ads1115_prov.h"
 
 #define NET_TAG "ads1115_net"
 
@@ -52,6 +53,7 @@
 #define NET_SEND_TIMEOUT_S  1
 #define NET_SELECT_MS       100     /* 收发循环轮询周期 */
 #define NET_APPLY_TIMEOUT_MS 60000u /* 换网后等待 IP 的回滚窗口 */
+#define NET_PROV_AFTER_MS    30000u /* STA 连不上 IP 多久后进入配网 */
 #define NET_ROLLBACK_WAIT_MS 10000u /* 回滚后等待恢复连接的时间 */
 
 #define WIFI_NS        "adsnet"
@@ -451,6 +453,22 @@ static serve_result_t serve_connection(int fd)
 }
 
 /* ------------------------------------------------------------------ */
+/* 配网页回调：应用用户提交的新凭据（httpd 任务上下文执行）               */
+/* ------------------------------------------------------------------ */
+
+static void net_apply_provisioned_credentials(const char *ssid, const char *pass)
+{
+    s_applying = true;   /* 关闭事件回调的自动重连，避免旧凭据干扰 */
+    creds_save_active(ssid, pass);
+    strncpy(s_wifi_ssid, ssid, sizeof(s_wifi_ssid) - 1u);
+    strncpy(s_wifi_pass, pass, sizeof(s_wifi_pass) - 1u);
+    wifi_apply_credentials(s_wifi_ssid, s_wifi_pass);
+    esp_wifi_set_mode(WIFI_MODE_STA);
+    esp_wifi_connect();
+    ESP_LOGI(NET_TAG, "配网：已切换 STA 连接 \"%s\"，等待 IP（60 s）", ssid);
+}
+
+/* ------------------------------------------------------------------ */
 /* 管理者任务                                                           */
 /* ------------------------------------------------------------------ */
 
@@ -459,7 +477,39 @@ static void manager_task(void *arg)
     (void)arg;
 
     for (;;) {
-        (void)xEventGroupWaitBits(s_ev, WIFI_UP_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+        EventBits_t bits = xEventGroupWaitBits(s_ev, WIFI_UP_BIT, pdFALSE, pdTRUE,
+                                               pdMS_TO_TICKS(NET_PROV_AFTER_MS));
+        if ((bits & WIFI_UP_BIT) == 0u) {
+            /* 30 s 连不上已存的 WiFi → 进入 SoftAP 配网模式 */
+            prov_reset_applied();
+            prov_start(net_apply_provisioned_credentials);
+            ESP_LOGW(NET_TAG, "无法连接 WiFi，进入配网模式");
+
+            bool applied = false;
+            int wait_s = 0;
+            while ((xEventGroupGetBits(s_ev) & WIFI_UP_BIT) == 0u) {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                if (!applied && prov_was_applied()) {
+                    applied = true;
+                    wait_s = 0;
+                    ESP_LOGI(NET_TAG, "收到配网凭据，等待连接结果（60 s）");
+                }
+                if (applied && ++wait_s >= 60) {
+                    ESP_LOGW(NET_TAG, "配网凭据未能连接，重新开启配网热点");
+                    break;
+                }
+            }
+
+            prov_stop();
+            if ((xEventGroupGetBits(s_ev) & WIFI_UP_BIT) == 0u) {
+                /* 新凭据也没连上：允许自动重连（存的是新凭据），30 s 后再进配网 */
+                s_applying = false;
+                esp_wifi_connect();
+                continue;
+            }
+            s_applying = false;
+            ESP_LOGI(NET_TAG, "配网成功，恢复正常遥测");
+        }
 
         if (s_pending_apply) {
             apply_pending_net();
